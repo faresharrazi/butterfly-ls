@@ -23,7 +23,8 @@ def answer_question(pdf_path: str, question: str) -> str:
     """
     Uploads a PDF for OCR (if not already uploaded),
     and asks a question via Mistral API using the signed document URL.
-    Returns the answer text.
+    Returns a concise answer. If the document does not contain the answer,
+    responds with "Answer not included in the document." without hallucinating.
     """
     # Upload once per PDF and cache the signed URL
     if pdf_path not in doc_url_cache:
@@ -40,8 +41,16 @@ def answer_question(pdf_path: str, question: str) -> str:
 
     doc_url = doc_url_cache[pdf_path]
 
-    # Prepare the chat messages
+    # Prepare the chat messages with concise system prompt and no-hallucination instruction
     messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a helpful assistant that answers questions strictly using the provided document. "
+                "Keep responses under 50 words. "
+                "If the document does not contain the answer, respond exactly 'Answer not included in the document.' without inventing information."
+            )
+        },
         {
             "role": "user",
             "content": [
@@ -52,8 +61,13 @@ def answer_question(pdf_path: str, question: str) -> str:
     ]
 
     try:
-        resp = client.chat.complete(model="mistral-small-latest", messages=messages)
-        return resp.choices[0].message.content
+        # Limit output length to enforce brevity
+        resp = client.chat.complete(
+            model="mistral-small-latest",
+            messages=messages,
+            max_tokens=100  # adjust as needed
+        )
+        return resp.choices[0].message.content.strip()
     except Exception as chat_err:
         raise RuntimeError(f"Chat completion failed: {chat_err}")
 
